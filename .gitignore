@@ -1,0 +1,19 @@
+# 分析结果：体积大，可由代码重新生成
+output/
+*.parquet
+*.png
+*.csv
+
+# 本机配置
+config/paths.local.toml
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+
+# 操作系统文件
+Thumbs.db
+.DS_Store
