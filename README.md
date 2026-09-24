@@ -73,7 +73,7 @@ python layered_backtest.py  --factor ep
 output/
 ├── 因子对比表.md / .csv           summarize_factors.py 生成的跨因子对比表
 ├── 因子测试.md                    factor_test_report.py 生成的汇总文档
-├── 因子测试图/                    汇总文档用的六张图
+├── 因子测试图/                    汇总文档用的十张图（回归 3 + IC 4 + 分层 3）
 ├── ep/
 │   ├── standardized/             （仅 --standardize-first 时产生）
 │   │   ├── ep.parquet            MAD 去极值 + Z 标准化后的因子

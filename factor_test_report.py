@@ -296,7 +296,12 @@ def plot_regression_cumulative(factors: list[dict], path: Path) -> None:
 
 
 def plot_ic_series(factors: list[dict], path: Path) -> None:
-    """四宫格：每个因子的逐月 IC 与累计 IC。"""
+    """四宫格：每个因子的逐月 IC（单一纵轴）。
+
+    刻意不在同一张图上叠累计 IC：累计 IC 的量纲和月度 IC 差一个数量级，
+    共用一张图必须用双轴，而双轴的两个零点不在同一高度，会让读者把正数看成负数。
+    累计 IC 单独画在 plot_ic_cumulative_grid()。
+    """
     plt.rcParams["axes.unicode_minus"] = False
     figure, axes = _grid(factors, 4.2)
     for index, item in enumerate(factors):
@@ -310,13 +315,6 @@ def plot_ic_series(factors: list[dict], path: Path) -> None:
             color=np.where(monthly["ic_neutral"] >= 0, "#176B87", "#B23A48"),
             alpha=0.85,
         )
-        twin = ax.twinx()
-        twin.plot(
-            monthly["formation_date"], monthly["ic_neutral"].cumsum(),
-            color="#8A5A2B", linewidth=1.5,
-        )
-        twin.set_ylabel("Cumulative IC", fontsize=8, color="#8A5A2B")
-        twin.tick_params(axis="y", labelsize=8, colors="#8A5A2B")
         ax.set_title(
             f"{item['name'].upper()}  IC={overall['ic_mean']:+.4f}  IR={overall['ir']:+.3f}  "
             f"t={overall['ic_t']:+.3f}  p={overall['ic_p']:.4f}  months={int(overall['months'])}",
@@ -326,7 +324,42 @@ def plot_ic_series(factors: list[dict], path: Path) -> None:
         ax.grid(axis="y", alpha=0.25)
     for index in range(len(factors), len(axes) * 2):
         axes[index // 2][index % 2].axis("off")
-    figure.suptitle("Monthly Rank IC and cumulative IC (neutralized)", fontsize=13)
+    figure.suptitle("Monthly Rank IC (neutralized)", fontsize=13)
+    figure.tight_layout(rect=(0, 0, 1, 0.97))
+    figure.savefig(path, dpi=170, bbox_inches="tight")
+    plt.close(figure)
+
+
+def plot_ic_cumulative_grid(factors: list[dict], path: Path) -> None:
+    """四宫格：每个因子的累计 IC（单一纵轴，每格独立刻度）。"""
+    plt.rcParams["axes.unicode_minus"] = False
+    figure, axes = _grid(factors, 4.2)
+    for index, item in enumerate(factors):
+        ax = axes[index // 2][index % 2]
+        monthly = item["monthly"]
+        cumulative = monthly["ic_neutral"].cumsum()
+        ax.axhline(0.0, color="#555555", linewidth=0.9)
+        ax.plot(monthly["formation_date"], cumulative, color="#8A5A2B", linewidth=1.8)
+        ax.fill_between(
+            monthly["formation_date"], 0.0, cumulative,
+            where=cumulative >= 0, color="#176B87", alpha=0.15,
+        )
+        ax.fill_between(
+            monthly["formation_date"], 0.0, cumulative,
+            where=cumulative < 0, color="#B23A48", alpha=0.15,
+        )
+        positive_share = float((cumulative > 0).mean())
+        ax.set_title(
+            f"{item['name'].upper()}  end={cumulative.iloc[-1]:+.3f}  "
+            f"min={cumulative.min():+.3f}  max={cumulative.max():+.3f}  "
+            f"above zero {positive_share * 100:.0f}% of months",
+            fontsize=10,
+        )
+        ax.set_ylabel("Cumulative IC")
+        ax.grid(axis="y", alpha=0.25)
+    for index in range(len(factors), len(axes) * 2):
+        axes[index // 2][index % 2].axis("off")
+    figure.suptitle("Cumulative Rank IC (sum of monthly IC, not a NAV)", fontsize=13)
     figure.tight_layout(rect=(0, 0, 1, 0.97))
     figure.savefig(path, dpi=170, bbox_inches="tight")
     plt.close(figure)
@@ -739,10 +772,18 @@ def build_markdown(
         "",
         "### 3.4 图",
         "",
-        "![IC-时间序列](./因子测试图/IC_时间序列_分因子.png)",
+        "![IC-月度](./因子测试图/IC_月度_分因子.png)",
         "",
-        "每格是该因子的逐月中性化 IC（柱）与累计 IC（棕色线，右轴）。**累计 IC 是逐月 IC 的累加，"
-        "不是组合净值**。",
+        "每格是该因子的逐月中性化 IC。蓝柱为正向月份、红柱为负向月份，正负交替越多说明"
+        "单月估计越不稳定。",
+        "",
+        "![IC-累计](./因子测试图/IC_累计_分因子.png)",
+        "",
+        "每格是该因子的**累计 IC**（逐月 IC 的累加）。线条的斜率就是当月 IC：向上说明该月为正向、"
+        "向下说明为负向；曲线的整体走向反映因子方向。",
+        "",
+        "> 累计 IC 是相关系数的累加，**不是组合净值**，没有金额含义，不能当作可交易收益。"
+        "它只用来把逐月噪音积分掉、看清趋势。",
         "",
         "![IC-累计对比](./因子测试图/IC_累计IC_对比.png)",
         "",
@@ -950,7 +991,8 @@ def main(argv: list[str] | None = None) -> None:
             figure_dir / "回归_年度系数_热力图.png",
         )
     if ics:
-        plot_ic_series(ics, figure_dir / "IC_时间序列_分因子.png")
+        plot_ic_series(ics, figure_dir / "IC_月度_分因子.png")
+        plot_ic_cumulative_grid(ics, figure_dir / "IC_累计_分因子.png")
         plot_ic_cumulative(ics, figure_dir / "IC_累计IC_对比.png")
         plot_heatmap(
             ics, "ic_mean", "Annual mean Rank IC", figure_dir / "IC_年度IC_热力图.png",
