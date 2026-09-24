@@ -203,6 +203,87 @@ def _f(value, digits: int = 4, kind: str = "num") -> str:
     return f"{number:.{digits}f}"
 
 
+def build_conclusions(factors: list[dict]) -> list[str]:
+    """根据实际数据自动生成结论条目，避免写死的解读与数字脱节。"""
+    lines: list[str] = []
+
+    # 1. 显著性与方向
+    significant = [item for item in factors if float(item["overall"]["ic_p"]) < 0.05]
+    if significant:
+        described = "、".join(
+            f"{item['name'].upper()}（IC={_f(item['overall']['ic_mean'], 4, 'signed')}，"
+            f"t={_f(item['overall']['ic_t'], 2, 'signed')}，"
+            f"p={_f(item['overall']['ic_p'], 4)}）"
+            for item in sorted(significant, key=lambda x: abs(float(x["overall"]["ic_t"])), reverse=True)
+        )
+        lines.append(f"- **5% 水平显著的因子**：{described}。")
+    not_significant = [item for item in factors if float(item["overall"]["ic_p"]) >= 0.05]
+    if not_significant:
+        described = "、".join(
+            f"{item['name'].upper()}（p={_f(item['overall']['ic_p'], 4)}）" for item in not_significant
+        )
+        lines.append(f"- **未达到 5% 显著**：{described}。")
+
+    # 2. 年度集中度：年度 IC 累加值中，最强年份占多少
+    for item in factors:
+        annual = item["annual"]
+        if annual is None or annual.empty or "ic_mean" not in annual:
+            continue
+        values = annual[["period", "ic_mean"]].dropna()
+        if values.empty:
+            continue
+        total = float(values["ic_mean"].sum())
+        # 用绝对值判断幅度，避免负向因子被误读成「最接近零的那年最强」
+        magnitude = values["ic_mean"].abs()
+        strongest = values.loc[magnitude.idxmax()]
+        weakest = values.loc[magnitude.idxmin()]
+        peak = float(strongest["ic_mean"])
+        share = (
+            f"，占年度 IC 累加的 {abs(peak) / abs(total) * 100:.0f}%"
+            if total != 0 and np.sign(peak) == np.sign(total)
+            else ""
+        )
+        lines.append(
+            f"- **{item['name'].upper()} 的年度分布**：{int(strongest['period'])} 年幅度最大"
+            f"（IC={_f(peak, 4, 'signed')}{share}），{int(weakest['period'])} 年幅度最小"
+            f"（IC={_f(weakest['ic_mean'], 4, 'signed')}）。"
+        )
+
+    # 3. 中性化是否有帮助
+    helped = [
+        item
+        for item in factors
+        if abs(float(item["overall"]["ir"])) > abs(float(item["overall"]["ic_raw_ir"]))
+    ]
+    if helped:
+        described = "、".join(
+            f"{item['name'].upper()}（IR {_f(item['overall']['ic_raw_ir'], 3, 'signed')} → "
+            f"{_f(item['overall']['ir'], 3, 'signed')}）"
+            for item in helped
+        )
+        lines.append(f"- **中性化提升了 IR**：{described}。")
+    hurt = [item for item in factors if item not in helped]
+    if hurt:
+        described = "、".join(
+            f"{item['name'].upper()}（IR {_f(item['overall']['ic_raw_ir'], 3, 'signed')} → "
+            f"{_f(item['overall']['ir'], 3, 'signed')}）"
+            for item in hurt
+        )
+        lines.append(f"- **中性化未提升 IR**：{described}。")
+
+    # 4. IC 波动
+    if len(factors) > 1:
+        volatility = sorted(factors, key=lambda x: float(x["overall"]["ic_std"]), reverse=True)
+        highest, lowest = volatility[0], volatility[-1]
+        lines.append(
+            f"- **IC 波动**：最大 {highest['name'].upper()}（标准差 "
+            f"{_f(highest['overall']['ic_std'])}），最小 {lowest['name'].upper()}（"
+            f"{_f(lowest['overall']['ic_std'])}）。波动越大，IC 均值越容易被少数月份主导。"
+        )
+
+    return lines
+
+
 def build_markdown(factors: list[dict], root: Path) -> str:
     lines = [
         "# 因子 Rank IC 汇总",
@@ -301,7 +382,15 @@ def build_markdown(factors: list[dict], root: Path) -> str:
         "每个目录里都有逐月 IC、中性化残差样本、年度与全期汇总、图表、配置记录，"
         "以及该因子单独的 `IC统计结果.md`。",
         "",
-        "## 6. 怎么读这些数",
+        "## 6. 结论",
+        "",
+        "以下条目由实际数据自动生成，改数据后重新运行即可同步。",
+        "",
+    ]
+    lines += build_conclusions(factors)
+    lines += [
+        "",
+        "## 7. 怎么读这些数",
         "",
         "1. **先看符号是否符合经济含义**。负 IC 不一定是错误，可能只是因子方向本身是反的；",
         "2. **不要只看 IC 均值，要配 IR 一起看**。同样 IC 均值 0.03，标准差 0.10（IR=0.3）和标准差 0.25"
