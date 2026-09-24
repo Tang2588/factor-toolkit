@@ -11,7 +11,7 @@
 1. 每月形成日取因子，按「因子对行业与市值回归的残差」在每个一级行业内部排序；
 2. 行业内按升序分成五组，Q1 = 残差最低，Q5 = 残差最高；
 3. 各行业同序号组合并成全市场组合，因此每个组合的行业构成与股票池一致；
-4. 主结果市值加权，同时给出等权对照；
+4. 组合市值加权，权重在形成日确定，持有期内不调仓；
 5. 建仓日涨停的股票买不进、退出日跌停的股票卖不出，两者均剔除；
 6. 多空组合 = Q5 − Q1。
 
@@ -97,7 +97,6 @@ def build_holdings(
     group_key = ["formation_date", "quintile"]
     cap_sum = data.groupby(group_key, sort=False)["me_total"].transform("sum")
     data["weight_cap"] = data["me_total"] / cap_sum
-    data["weight_eq"] = 1.0 / data.groupby(group_key, sort=False)["security_id"].transform("size")
 
     audit["n_ties_in_factor"] = int(
         data.groupby(key, sort=False)["neutral_residual"].transform(lambda s: s.duplicated().sum()).sum()
@@ -126,7 +125,6 @@ def compute_monthly_returns(
             )
             if total_mv > 0
             else np.nan,
-            "benchmark_eq": float(month["forward_return"].mean()),
             "n_universe": int(len(month)),
         }
         for q in range(1, groups + 1):
@@ -135,9 +133,7 @@ def compute_monthly_returns(
             record[f"cap_Q{q}"] = (
                 float((sub["weight_cap"] * sub["forward_return"]).sum()) if len(sub) else np.nan
             )
-            record[f"eq_Q{q}"] = float(sub["forward_return"].mean()) if len(sub) else np.nan
         record["ls_cap"] = record[f"cap_Q{groups}"] - record["cap_Q1"]
-        record["ls_eq"] = record[f"eq_Q{groups}"] - record["eq_Q1"]
         rows.append(record)
     monthly = pd.DataFrame(rows).sort_values("formation_date").reset_index(drop=True)
     return monthly
@@ -294,10 +290,9 @@ def save_nav_plot(monthly: pd.DataFrame, path: Path, factor_label: str, groups: 
     axes[0].grid(alpha=0.25)
 
     axes[1].axhline(1.0, color="#555555", linewidth=0.9)
-    axes[1].plot(dates, _nav(monthly["ls_cap"]), color="#B23A48", linewidth=1.6, label="Q5 - Q1 (cap)")
     axes[1].plot(
-        dates, _nav(monthly["ls_eq"]), color="#2E7D5B", linewidth=1.3,
-        linestyle="--", label="Q5 - Q1 (equal weight)",
+        dates, _nav(monthly["ls_cap"]), color="#B23A48", linewidth=1.6,
+        label=f"Q{groups} - Q1 (cap-weighted)",
     )
     axes[1].set_ylabel("Cumulative NAV")
     axes[1].set_xlabel("Formation date")
@@ -383,7 +378,6 @@ def pct(value: float, digits: int = 2) -> str:
 
 def save_report(
     performance_table: pd.DataFrame,
-    equal_table: pd.DataFrame,
     monotonic: dict[str, float],
     annual: pd.DataFrame,
     turnover: pd.DataFrame,
@@ -393,8 +387,6 @@ def save_report(
     factor_path: Path,
     path: Path,
 ) -> None:
-    ls_row = performance_table.iloc[-1]
-    ls_eq_row = equal_table.iloc[-1]
     q_returns = [performance_table.iloc[q - 1]["annual_return"] for q in range(1, N_GROUPS + 1)]
     monotone_text = "单调递增" if all(
         q_returns[i] < q_returns[i + 1] for i in range(len(q_returns) - 1)
@@ -416,7 +408,7 @@ def save_report(
         "- 分组依据：因子对「对数市值 + 行业」回归后的**中性化残差**，与 Rank IC 口径一致；",
         "- 每月在每个申万一级行业内部按残差升序分五组，Q1 最低、Q5 最高；",
         "- 各行业同序号组合并成全市场组合，因此每个组合的行业构成与股票池一致；",
-        "- 主结果市值加权，等权作为对照；权重在形成日确定，持有期内不调仓；",
+        "- 组合市值加权，权重在形成日确定，持有期内不调仓；",
         "- 建仓日涨停（买不进）与退出日跌停（卖不出）的股票均剔除；",
         f"- 多空组合 = Q{N_GROUPS} − Q1；基准为股票池市值加权收益（缺少指数数据时的内部基准）。",
         "",
@@ -469,20 +461,7 @@ def save_report(
 
     lines += [
         "",
-        "## 6. 等权对照",
-        "",
-        "| 组合 | 年化收益 | 年化波动 | 夏普比率 | 最大回撤 |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for row in equal_table.itertuples(index=False):
-        lines.append(
-            f"| {row.组合} | {pct(row.annual_return)} | {pct(row.annual_vol)} | "
-            f"{num(row.sharpe, 3)} | {pct(row.max_drawdown)} |"
-        )
-
-    lines += [
-        "",
-        "## 7. 换手率",
+        "## 6. 换手率",
         "",
         "| 组合 | 平均单边换手率 | 中位单边换手率 | 最大单边换手率 |",
         "|---|---:|---:|---:|",
@@ -495,7 +474,7 @@ def save_report(
 
     lines += [
         "",
-        "## 8. 图表",
+        "## 7. 图表",
         "",
         "![五组与多空累计净值](./layered_nav.png)",
         "",
@@ -503,11 +482,10 @@ def save_report(
         "",
         "![月度换手率](./layered_turnover.png)",
         "",
-        "## 9. 输出文件",
+        "## 8. 输出文件",
         "",
         "- `layered_monthly_returns.csv`：逐月五组、多空与基准收益。",
         "- `layered_performance.csv`：市值加权组合绩效汇总。",
-        "- `layered_performance_equal.csv`：等权组合绩效汇总。",
         "- `layered_annual_returns.csv`：分年度收益。",
         "- `layered_turnover.csv`：逐月单边换手率。",
         "- `layered_holdings.parquet`：逐月逐股分组与权重。",
@@ -651,25 +629,21 @@ def main(argv: list[str] | None = None) -> None:
 
     print("Computing portfolio returns...", flush=True)
     monthly = compute_monthly_returns(holdings, groups=N_GROUPS)
-    turnover_cap = compute_turnover(holdings, "weight_cap", groups=N_GROUPS)
-    performance_cap = build_performance_table(monthly, turnover_cap, groups=N_GROUPS)
-    equal_monthly = monthly.copy()
-    for q in range(1, N_GROUPS + 1):
-        equal_monthly[f"cap_Q{q}"] = monthly[f"eq_Q{q}"]
-    equal_monthly["ls_cap"] = monthly["ls_eq"]
-    equal_monthly["benchmark_cap"] = monthly["benchmark_eq"]
-    performance_eq = build_performance_table(equal_monthly, turnover_cap, groups=N_GROUPS)
+    turnover = compute_turnover(holdings, "weight_cap", groups=N_GROUPS)
+    performance_table = build_performance_table(monthly, turnover, groups=N_GROUPS)
     monotonic = monotonicity(monthly, groups=N_GROUPS)
     annual = build_annual_table(monthly, groups=N_GROUPS)
 
     monthly.to_parquet(out_dir / "layered_monthly_returns.parquet", index=False)
     monthly.to_csv(out_dir / "layered_monthly_returns.csv", index=False, encoding="utf-8-sig")
-    performance_cap.to_csv(out_dir / "layered_performance.csv", index=False, encoding="utf-8-sig")
-    performance_eq.to_csv(
-        out_dir / "layered_performance_equal.csv", index=False, encoding="utf-8-sig"
+    performance_table.to_csv(
+        out_dir / "layered_performance.csv", index=False, encoding="utf-8-sig"
     )
     annual.to_csv(out_dir / "layered_annual_returns.csv", index=False, encoding="utf-8-sig")
-    turnover_cap.to_csv(out_dir / "layered_turnover.csv", index=False, encoding="utf-8-sig")
+    turnover.to_csv(out_dir / "layered_turnover.csv", index=False, encoding="utf-8-sig")
+    (out_dir / "layered_monotonicity.json").write_text(
+        json.dumps(monotonic, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     holdings[
         [
             "formation_date",
@@ -680,7 +654,6 @@ def main(argv: list[str] | None = None) -> None:
             "forward_return",
             "me_total",
             "weight_cap",
-            "weight_eq",
         ]
     ].to_parquet(out_dir / "layered_holdings.parquet", index=False)
 
@@ -694,7 +667,7 @@ def main(argv: list[str] | None = None) -> None:
         "grouping": "neutralized residual of the factor on intercept + size_z + K-1 industry dummies",
         "groups": N_GROUPS,
         "within_industry": True,
-        "weighting": "market-cap weighted (main), equal weighted (control)",
+        "weighting": "market-cap weighted; weights fixed at formation date",
         "tradability_filter": "exclude entry-day up-limit buys and exit-day down-limit sells",
         "long_short": f"Q{N_GROUPS} - Q1",
         "benchmark": "market-cap weighted return of the eligible universe",
@@ -713,13 +686,12 @@ def main(argv: list[str] | None = None) -> None:
 
     save_nav_plot(monthly, out_dir / "layered_nav.png", factor_label, groups=N_GROUPS)
     save_annual_plot(annual, out_dir / "layered_annual.png", factor_label, groups=N_GROUPS)
-    save_turnover_plot(turnover_cap, out_dir / "layered_turnover.png", groups=N_GROUPS)
+    save_turnover_plot(turnover, out_dir / "layered_turnover.png", groups=N_GROUPS)
     save_report(
-        performance_cap,
-        performance_eq,
+        performance_table,
         monotonic,
         annual,
-        turnover_cap,
+        turnover,
         audit,
         monthly,
         factor_label,
@@ -727,7 +699,7 @@ def main(argv: list[str] | None = None) -> None:
         out_dir / "分层回测结果.md",
     )
 
-    ls = performance_cap.iloc[-1]
+    ls = performance_table.iloc[-1]
     print("Layered backtest completed", flush=True)
     print(f"months={len(monthly)}", flush=True)
     print(f"ls_annual_return={ls['annual_return']:.10f}", flush=True)
