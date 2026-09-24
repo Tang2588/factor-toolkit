@@ -53,6 +53,9 @@ python summarize_factors.py
 
 # 只汇总横截面回归：全期表、分年度表、月度系数与累计溢价图
 python regression_report.py
+
+# 只汇总 Rank IC：全期表、分年度表、IC 时间序列与累计 IC 图
+python ic_report.py
 ```
 
 单步也可以单独运行：
@@ -73,6 +76,8 @@ output/
 ├── 因子对比表.md / .csv           summarize_factors.py 生成的跨因子对比表
 ├── 回归汇总.md                    regression_report.py 生成的回归汇总
 ├── 回归汇总/                      回归汇总用的三张图
+├── IC汇总.md                      ic_report.py 生成的 IC 汇总
+├── IC汇总/                        IC 汇总用的三张图
 ├── ep/
 │   ├── standardized/             （仅 --standardize-first 时产生）
 │   │   ├── ep.parquet            MAD 去极值 + Z 标准化后的因子
@@ -154,6 +159,7 @@ factor-toolkit/
 ├── layered_backtest.py        步骤四：行业内分层回测
 ├── summarize_factors.py       跨因子对比表
 ├── regression_report.py       横截面回归汇总（表 + 图）
+├── ic_report.py               Rank IC 汇总（表 + 图）
 ├── common/                    共享底层
 │   ├── paths.py               路径与共享常量
 │   ├── parquet_io.py          分片读取
