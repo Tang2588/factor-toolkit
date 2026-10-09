@@ -47,12 +47,14 @@ python run_all.py --factor ep
 # 只跑其中几步
 python run_all.py --factor ep --only ic,layered
 
-# 汇总所有已测因子
+# 汇总所有已测因子 → output/因子对比表.md / .csv
 python summarize_factors.py
 
-# 只汇总横截面回归：全期表、分年度表、月度系数与累计溢价图
-# 生成汇总文档（回归 + IC 合并成一份）
+# 生成汇总文档 → output/因子测试.md + output/因子测试图/
 python factor_test_report.py
+
+# 把汇总文档编译成 PDF → output/因子测试.pdf
+python build_report_pdf.py
 ```
 
 单步也可以单独运行：
@@ -71,6 +73,7 @@ python layered_backtest.py  --factor ep
 output/
 ├── 因子对比表.md / .csv           summarize_factors.py 生成的跨因子对比表
 ├── 因子测试.md                    factor_test_report.py 生成的汇总文档
+├── 因子测试.tex / .pdf            build_report_pdf.py 由上面那份编译而来
 ├── 因子测试图/                    汇总文档用的十张图（回归 3 + IC 4 + 分层 3）
 ├── ep/
 │   ├── RLM_H1_独立同方差/         横截面回归
@@ -81,6 +84,19 @@ output/
 
 每个步骤目录里都有一份 `*统计结果.md`，以及逐月结果、图表和 `*_config.json`
 （记录本次运行的完整口径）。
+
+### 该看哪些文件
+
+`output/` 下有一百多个文件，绝大多数是给机器读的。按这个顺序看：
+
+| 想干什么 | 看哪个 |
+|---|---|
+| 四因子的总体结论 | `因子测试.md`（GitHub 上直接可读）或 `因子测试.pdf` |
+| 跨因子横向对比 | `因子对比表.md`（14 列，含方向一致性判断） |
+| 看图表 | `因子测试图/` 下十张汇总图 |
+| 单个因子的完整结果 | `<因子名>/RLM_H1_独立同方差/RLM统计结果.md`、`<因子名>/RankIC/IC统计结果.md`、`<因子名>/分层回测/分层回测结果.md` |
+| 追溯明细数据 | `<因子名>/.../*.csv`、`*.parquet` |
+| 查本次运行口径 | `<因子名>/.../*_config.json` |
 
 ## 五、配置
 
@@ -148,6 +164,8 @@ factor-toolkit/
 ├── layered_backtest.py        步骤三：行业内分层回测
 ├── summarize_factors.py       跨因子对比表
 ├── factor_test_report.py      生成汇总文档《因子测试》（表 + 图）
+├── build_report_pdf.py        把《因子测试》编译成 PDF
+├── md_to_latex.py             Markdown → LaTeX 转换（被上一步调用）
 ├── common/                    共享底层
 │   ├── paths.py               路径与共享常量
 │   ├── parquet_io.py          分片读取

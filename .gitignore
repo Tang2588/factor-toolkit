@@ -5,6 +5,8 @@ output/*
 !output/因子对比表.md
 !output/因子对比表.csv
 !output/因子测试图/
+!output/因子测试.tex
+!output/因子测试.pdf
 
 # 大体积数据文件
 *.parquet
