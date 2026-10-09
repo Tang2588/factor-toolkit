@@ -15,13 +15,10 @@ data_root = "D:/实习生学习项目/基础数据"
 formal_test_start = "2020-07-31"
 
 # 因子文件的搜索目录。用 --factor ep 这样的短名时，会依次在这些目录中找 ep.parquet。
+# 支持通配符：一条 `factor-*` 就能覆盖全部因子目录，新加因子不用再改这里。
 # 也可以直接用 --factor 传完整路径，此时不需要配置这一项。
 factor_dirs = [
-    "D:/因子计算/factor-ep/因子结果",
-    "D:/因子计算/factor-pb/因子结果",
-    "D:/因子计算/factor-roe/因子结果",
-    "D:/因子计算/factor-size/因子结果",
-    "D:/因子计算/factor-turnover/因子结果",
+    "D:/因子计算/factor-*/因子结果",
 ]
 
 # 结果输出目录，留空则使用工具箱下的 output/

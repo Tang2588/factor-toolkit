@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import glob
 import os
 import tomllib
 from pathlib import Path
@@ -72,9 +73,23 @@ FORMAL_TEST_START = str(CONFIG.get("formal_test_start", FALLBACK_TEST_START))
 
 
 def factor_search_dirs() -> list[Path]:
-    """因子文件的搜索目录，来自配置里的 factor_dirs。"""
-    dirs = CONFIG.get("factor_dirs", FALLBACK_FACTOR_DIRS)
-    return [Path(item) for item in dirs]
+    """因子文件的搜索目录，来自配置里的 ``factor_dirs``。
+
+    条目支持通配符，例如 ``D:/因子计算/factor-*/因子结果``。
+    这样一个条目就能覆盖以后新增的因子目录，加因子不必再改配置。
+    通配符命中多个目录时按字典序返回，保证同名因子落在哪个目录是确定的。
+    """
+    entries = CONFIG.get("factor_dirs", FALLBACK_FACTOR_DIRS)
+    dirs: list[Path] = []
+    seen: set[str] = set()
+    for item in entries:
+        text = str(item)
+        matches = sorted(glob.glob(text)) if any(ch in text for ch in "*?[") else [text]
+        for match in matches:
+            if match not in seen:
+                seen.add(match)
+                dirs.append(Path(match))
+    return dirs
 
 
 def resolve_factor_path(factor: str) -> Path:
