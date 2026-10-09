@@ -51,8 +51,10 @@ python run_all.py --factor "D:/某处/换手率.parquet" --name 换手率
 # 只跑其中几步
 python run_all.py --factor ep --only ic,layered
 
-# 把该因子的三份统计文档编译成 PDF（各出一个）
+# 把该因子的三份统计文档合并成一份并编译成 PDF
 python build_report_pdf.py --factor ep
+#   → output/ep/因子测试报告.md
+#   → output/ep/因子测试报告.pdf
 
 # 也可以只编译指定的一份
 python build_report_pdf.py --source "output/ep/RankIC/IC统计结果.md"
@@ -73,6 +75,7 @@ python layered_backtest.py  --factor ep
 ```text
 output/
 └── ep/
+    ├── 因子测试报告.md / .pdf        三份统计文档合并而成（build_report_pdf.py 生成）
     ├── RLM_H1_独立同方差/            横截面回归
     │   ├── RLM统计结果.md            ← 单因子文档（口径 + 结果表 + 图）
     │   ├── rlm_factor_premium.png      月度系数与累计溢价
@@ -98,7 +101,11 @@ output/
         └── ...
 ```
 
-每个步骤目录里都有一份 `*统计结果.md`，它是该因子在这一步的完整文档：口径说明、
+`因子测试报告.md` 是把下面三份统计文档合并成的单一文档：自动按「回归 → IC → 分层回测」
+排序，标题降级为章节，图片路径自动改写，编译后是一份带目录的 PDF。**它不含结论文字**——
+结论由使用者自行撰写，脚本不会生成也不会覆盖。
+
+每个步骤目录里还有一份 `*统计结果.md`，它是该因子在这一步的完整文档：口径说明、
 全期与分年度结果表、极值月份、诊断信息和图表。**文档里的所有数字都由脚本从结果
 数据自动生成，没有人工填写的内容。**
 
@@ -109,7 +116,7 @@ output/
 | 单因子的回归结果 | `<因子名>/RLM_H1_独立同方差/RLM统计结果.md` |
 | 单因子的 Rank IC | `<因子名>/RankIC/IC统计结果.md` |
 | 单因子的分层回测 | `<因子名>/分层回测/分层回测结果.md` |
-| 要 PDF | `python build_report_pdf.py --factor <因子名>` |
+| 要一份完整的 PDF | `python build_report_pdf.py --factor <因子名>` → `output/<因子名>/因子测试报告.pdf`（三份合并成一份） |
 | 追溯明细数据 | `<因子名>/.../*.csv`、`*.parquet` |
 | 查本次运行口径 | `<因子名>/.../*_config.json` |
 
