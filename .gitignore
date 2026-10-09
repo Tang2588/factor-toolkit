@@ -1,8 +1,13 @@
-# 分析结果：体积大，可由代码重新生成
-output/
+# 逐因子的分析结果：体积大，可由代码重新生成
+# 注意用 output/* 而不是 output/：目录整体被排除后，无法再单独放行里面的文件
+output/*
+!output/因子测试.md
+!output/因子对比表.md
+!output/因子对比表.csv
+!output/因子测试图/
+
+# 大体积数据文件
 *.parquet
-*.png
-*.csv
 
 # 本机配置
 config/paths.local.toml

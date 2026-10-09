@@ -453,6 +453,11 @@ def _num(value, digits: int = 4, kind: str = "num") -> str:
     return f"{number:.{digits}f}"
 
 
+def _bold(text: str, flag: bool) -> str:
+    """需要强调的单元格加粗，用于标记多空组合那一行。"""
+    return f"**{text}**" if flag else text
+
+
 def _annual_table(factors: list[dict], value_key: str, extra_key: str | None) -> list[str]:
     years = sorted({int(y) for item in factors for y in item["annual"]["period"]})
     lines = [
@@ -640,6 +645,112 @@ def _layered_conclusions(factors: list[dict]) -> list[str]:
     return lines
 
 
+def _join_factor_names(regressions, ics, layered) -> dict:
+    """把三个检验的结果按因子名对齐，便于交叉判断。"""
+    return {
+        "reg": {item["name"]: item for item in regressions},
+        "ic": {item["name"]: item for item in ics},
+        "layered": {item["name"]: item for item in layered},
+    }
+
+
+def _flags(store: dict, name: str) -> tuple[bool, bool, float, float, float]:
+    """返回 (回归显著, IC 显著, 回归系数, IC 均值, 多空年化)。"""
+    regression = store["reg"].get(name)
+    ic = store["ic"].get(name)
+    layered = store["layered"].get(name)
+    regression_significant = bool(regression) and float(regression["overall"]["factor_iid_p"]) < 0.05
+    ic_significant = bool(ic) and float(ic["overall"]["ic_p"]) < 0.05
+    beta = float(regression["overall"]["factor_mean"]) if regression else np.nan
+    ic_mean = float(ic["overall"]["ic_mean"]) if ic else np.nan
+    ls_return = float(layered["long_short"]["annual_return"]) if layered else np.nan
+    return regression_significant, ic_significant, beta, ic_mean, ls_return
+
+
+def _summary_rows(regressions, ics, layered) -> list[str]:
+    """6.1 的对比表：三个检验的核心数字、方向一致性与显著性判断。"""
+    store = _join_factor_names(regressions, ics, layered)
+    names = list(store["reg"])
+    names += [n for n in store["ic"] if n not in names]
+    names += [n for n in store["layered"] if n not in names]
+
+    rows = []
+    for name in names:
+        regression_significant, ic_significant, beta, ic_mean, ls_return = _flags(store, name)
+        values = [v for v in (beta, ic_mean, ls_return) if np.isfinite(v)]
+        signs = {np.sign(v) for v in values}
+        if len(values) < 3:
+            direction = "数据不足"
+        elif len(signs) == 1:
+            direction = "一致"
+        else:
+            direction = "**不一致**"
+        if regression_significant and ic_significant:
+            significance = "回归与 IC 均显著"
+        elif ic_significant:
+            significance = "IC 显著，回归不显著"
+        elif regression_significant:
+            significance = "回归显著，IC 不显著"
+        else:
+            significance = "均不显著"
+        rows.append(
+            f"| **{name.upper()}** | {_num(beta, 4, 'pct')} | {_num(ic_mean, 4, 'signed')} | "
+            f"{_num(ls_return, 2, 'pct')} | {direction} | {significance} |"
+        )
+    return rows
+
+
+def _short_conclusions(regressions, ics, layered) -> list[str]:
+    """6.2：按「两个检验都显著 → 只有一个显著 → 都不显著」分档，每个因子一条判断。"""
+    store = _join_factor_names(regressions, ics, layered)
+    names = sorted(set(store["reg"]) | set(store["ic"]))
+    ranked = []
+    for name in names:
+        regression_significant, ic_significant, beta, ic_mean, ls_return = _flags(store, name)
+        ic_item = store["ic"].get(name)
+        strength = abs(float(ic_item["overall"]["ic_t"])) if ic_item else 0.0
+        values = [v for v in (beta, ic_mean, ls_return) if np.isfinite(v)]
+        consistent = len(values) == 3 and len({np.sign(v) for v in values}) == 1
+        if regression_significant and ic_significant:
+            tier = 2
+        elif regression_significant or ic_significant:
+            tier = 1
+        else:
+            tier = 0
+        ranked.append(
+            {
+                "name": name.upper(),
+                "tier": tier,
+                "strength": strength,
+                "reg_sig": regression_significant,
+                "ic_sig": ic_significant,
+                "consistent": consistent,
+                "ic_mean": ic_mean,
+            }
+        )
+    ranked.sort(key=lambda item: (-item["tier"], -item["strength"]))
+
+    lines = []
+    for position, item in enumerate(ranked, start=1):
+        if item["tier"] == 2:
+            label = "最强" if position == 1 else "次之"
+            lines.append(
+                f"{position}. **{item['name']} {label}**：回归与 IC 都显著、方向一致。"
+            )
+        elif item["tier"] == 1:
+            which = "IC 显著而回归不显著" if item["ic_sig"] else "回归显著而 IC 不显著"
+            lines.append(
+                f"{position}. **{item['name']} 偏弱**：{which}，"
+                "信息只在一个层面站得住，需要分层回测确认。"
+            )
+        else:
+            detail = "回归与 IC 都不显著"
+            if not item["consistent"]:
+                detail += "，且三个检验的方向不一致"
+            lines.append(f"{position}. **{item['name']} 不可用**：{detail}。")
+    return lines
+
+
 def build_markdown(
     regressions: list[dict],
     ics: list[dict],
@@ -808,24 +919,35 @@ def build_markdown(
         "",
         "### 4.2 组合绩效",
         "",
-        "| 因子 | 组合 | 年化收益 | 累计收益 | 年化波动 | 夏普比率 | 最大回撤 | 胜率 | 年化超额 | 信息比率 | 平均换手率 |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "按因子拆成四张表，每张表是该因子的五个分位组合与多空组合。",
+        "",
     ]
     for item in layered:
         table = item["performance"]
+        lines.append(f"**{item['name'].upper()}**")
+        lines.append("")
+        lines.append(
+            "| 组合 | 年化收益 | 累计收益 | 年化波动 | 夏普比率 | 最大回撤 | 胜率 | "
+            "年化超额 | 信息比率 | 平均换手率 |"
+        )
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for position in range(len(table)):
             row = table.iloc[position]
-            prefix = f"**{item['name'].upper()}**" if position == 0 else ""
+            label = str(row.iloc[0])
+            bold = "-" in label  # 只有多空组合（Q5-Q1）那一行加粗
             lines.append(
-                f"| {prefix} | {row.iloc[0]} | {_num(row['annual_return'], 2, 'pct')} | "
-                f"{_num(row['total_return'], 2, 'pct')} | "
+                f"| {'**' if bold else ''}{label}{'**' if bold else ''} | "
+                f"{_bold(_num(row['annual_return'], 2, 'pct'), bold)} | "
+                f"{_bold(_num(row['total_return'], 2, 'pct'), bold)} | "
                 f"{_num(row['annual_vol'], 2, 'pct').lstrip('+')} | "
-                f"{_num(row['sharpe'], 3, 'signed')} | {_num(row['max_drawdown'], 2, 'pct')} | "
-                f"{_num(row['win_ratio'], 2, 'pct').lstrip('+')} | "
+                f"{_bold(_num(row['sharpe'], 3, 'signed'), bold)} | "
+                f"{_bold(_num(row['max_drawdown'], 2, 'pct'), bold)} | "
+                f"{_bold(_num(row['win_ratio'], 2, 'pct').lstrip('+'), bold)} | "
                 f"{_num(row['excess_annual_return'], 2, 'pct')} | "
                 f"{_num(row['info_ratio'], 3, 'signed')} | "
                 f"{_num(row['avg_turnover'], 2, 'pct').lstrip('+')} |"
             )
+        lines.append("")
 
     lines += [
         "",
@@ -914,25 +1036,22 @@ def build_markdown(
         "",
         "## 六、结论",
         "",
-        "### 6.1 横截面回归",
+        "### 6.1 三个检验的结果",
         "",
+        "| 因子 | 回归月均系数 | IC 均值 | 多空年化 | 三项方向 | 显著性 |",
+        "|---|---:|---:|---:|---|---|",
     ]
-    lines += _regression_conclusions(regressions)
-    lines += ["", "### 6.2 Rank IC", ""]
-    lines += _ic_conclusions(ics)
-    if layered:
-        lines += ["", "### 6.3 行业内分层回测", ""]
-        lines += _layered_conclusions(layered)
+    lines += _summary_rows(regressions, ics, layered)
+    lines += ["", "### 6.2 结论", ""]
+    lines += _short_conclusions(regressions, ics, layered)
     lines += [
         "",
-        "### 6.4 使用建议",
+        "### 6.3 两个提醒",
         "",
-        "- **符号为负不一定是错误**，要先看因子的经济含义。PB 越大越贵、Size 越大代表市值越大，"
-        "它们与收益负相关是正常现象；若要统一成「越大越好」，把 PB 换成 `BP = 1/PB` 再接入；",
-        "- **两个检验都显著且方向一致**的因子，才值得进入下一步的行业内分层回测；",
-        "- 单月 `abs(z) >= 2` 的比例普遍很高（单月样本数大所致），它衡量单月估计精度，"
-        "**不是长期有效性的证据**；",
-        "- 全期显著但只靠一两年贡献的因子，稳定性存疑；分年度形态比全期均值更重要。",
+        "- **符号为负不是错误**。PB 越大越贵、Size 越大代表市值越大，负号是预期之内的；"
+        "要统一成「越大越好」时，把 PB 换成 `BP = 1/PB` 再接入。",
+        "- **看分年度，不只看全期**。全期显著但只靠一两年贡献的因子，稳定性存疑；"
+        "单月 `abs(z) >= 2` 的比例高只反映单月样本量大，不代表长期有效。",
         "",
         "## 七、各因子的完整结果",
         "",
