@@ -1,13 +1,15 @@
 # 因子测试工具箱
 
-对任意股票横截面因子做标准化的四步测试：**去极值标准化 → 横截面回归 → Rank IC →
-行业内分层回测**。
+对任意股票横截面因子做三步测试：**横截面回归 → Rank IC → 行业内分层回测**。
 
 工具箱与因子无关：只要因子文件符合下面的格式，换因子不需要改任何代码。
 
+**标准化不属于本工具箱。** 逐日横截面 MAD 去极值与 Z 标准化属于因子计算层，
+由各因子仓库的第 5 步完成——这样同一套去极值口径全项目只实现一次。
+
 ## 一、接口契约
 
-因子计算层唯一需要交付的东西是一份 parquet：
+因子计算层唯一需要交付的东西是一份 parquet，且必须**已经做过**逐日横截面 MAD 去极值与 Z 标准化：
 
 ```text
 index   = ['date', 'stock_code']
@@ -15,21 +17,21 @@ columns = ['signal']
 ```
 
 - `date` 为交易日，`stock_code` 为六位代码；
-- `signal` 为因子值，方向自定，缺失值表示当日该股票不参与；
+- `signal` 为**标准化后**的因子值，方向自定，缺失值表示当日该股票不参与；
 - **文件名就是因子名**（`ep.parquet` → 因子名 `ep`），用于命名输出目录和报告标题。
 
-四个已交付因子都符合这个格式，可以直接接入。
+四个已交付因子都符合这个格式，可以直接接入。若手上是未标准化的原始因子，
+请先在因子计算层按 `ep_step5_MAD去极值_Z标准化.py` 的口径处理好再接入。
 
-## 二、四步测试
+## 二、三步测试
 
 | 步骤 | 脚本 | 回答的问题 |
 |---|---|---|
-| 1. 去极值标准化 | `standardize.py` | 把原始因子处理成可比口径（仅原始因子需要） |
-| 2. 横截面回归 | `cross_section_rlm.py` | 因子每高一个标准差，收益平均变化多少 |
-| 3. Rank IC | `rank_ic.py` | 因子的排序和收益排序是否一致、是否稳定 |
-| 4. 分层回测 | `layered_backtest.py` | 真按因子建组合，收益、波动、回撤如何 |
+| 1. 横截面回归 | `cross_section_rlm.py` | 因子每高一个标准差，收益平均变化多少 |
+| 2. Rank IC | `rank_ic.py` | 因子的排序和收益排序是否一致、是否稳定 |
+| 3. 分层回测 | `layered_backtest.py` | 真按因子建组合，收益、波动、回撤如何 |
 
-三个分析步骤共用同一套样本、前瞻收益、控制变量与月度日历，结果可以直接横向对照。
+三个步骤共用同一套样本、前瞻收益、控制变量与月度日历，结果可以直接横向对照。
 
 ## 三、快速开始
 
@@ -39,11 +41,8 @@ pip install -r requirements.txt
 # 复制一份本机配置并改成本机的数据目录
 cp config/paths.toml config/paths.local.toml
 
-# 跑完四步（因子已做过 MAD 与 Z 标准化）
+# 跑完三步
 python run_all.py --factor ep
-
-# 因子还是原始值，先标准化再分析
-python run_all.py --factor "D:/某处/newfac_raw.parquet" --name newfac --standardize-first
 
 # 只跑其中几步
 python run_all.py --factor ep --only ic,layered
@@ -59,7 +58,6 @@ python factor_test_report.py
 单步也可以单独运行：
 
 ```bash
-python standardize.py      --factor "D:/某处/fac_raw.parquet" --name fac
 python cross_section_rlm.py --factor ep
 python rank_ic.py           --factor ep
 python layered_backtest.py  --factor ep
@@ -75,10 +73,6 @@ output/
 ├── 因子测试.md                    factor_test_report.py 生成的汇总文档
 ├── 因子测试图/                    汇总文档用的十张图（回归 3 + IC 4 + 分层 3）
 ├── ep/
-│   ├── standardized/             （仅 --standardize-first 时产生）
-│   │   ├── ep.parquet            MAD 去极值 + Z 标准化后的因子
-│   │   ├── ep_mad.parquet        仅截断、未标准化
-│   │   └── processing_stats.parquet  逐日中位数、MAD、上下界、截断数
 │   ├── RLM_H1_独立同方差/         横截面回归
 │   ├── RankIC/                   Rank IC
 │   └── 分层回测/                  行业内分层回测
@@ -147,12 +141,11 @@ output/
 
 ```text
 factor-toolkit/
-├── run_all.py                 一键跑完四步
-├── standardize.py             步骤一：MAD 去极值 + Z 标准化
-├── cross_section_rlm.py       步骤二：横截面回归（Huber RLM）
-├── cross_section_ols.py       步骤二对照：同口径 OLS
-├── rank_ic.py                 步骤三：Rank IC
-├── layered_backtest.py        步骤四：行业内分层回测
+├── run_all.py                 一键跑完三步
+├── cross_section_rlm.py       步骤一：横截面回归（Huber RLM）
+├── cross_section_ols.py       步骤一对照：同口径 OLS
+├── rank_ic.py                 步骤二：Rank IC
+├── layered_backtest.py        步骤三：行业内分层回测
 ├── summarize_factors.py       跨因子对比表
 ├── factor_test_report.py      生成汇总文档《因子测试》（表 + 图）
 ├── common/                    共享底层
@@ -161,8 +154,7 @@ factor-toolkit/
 │   ├── market.py              行情清洗、B 股剔除、北交所代码映射
 │   ├── calendar.py            月度形成／建仓／退出日历
 │   ├── returns.py             端点口径前瞻收益
-│   ├── panel.py               形成日面板、行业面板、回归面板、中性化残差
-│   └── streaming.py           逐日 MAD 去极值与 Z 标准化
+│   └── panel.py               形成日面板、行业面板、回归面板、中性化残差
 ├── config/paths.toml
 └── requirements.txt
 ```

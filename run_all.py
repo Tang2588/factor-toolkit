@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
-"""因子标准测试流程：一键跑完去极值标准化、横截面回归、Rank IC 与分层回测。
+"""因子标准测试流程：一键跑完横截面回归、Rank IC 与行业内分层回测。
 
-    # 因子已经做过 MAD 与 Z 标准化（四个交付版就是这种情况）
     python run_all.py --factor ep
-
-    # 因子还是原始值，先做标准化再分析
-    python run_all.py --factor "D:/某处/newfac_raw.parquet" --name newfac --standardize-first
 
     # 只跑其中几步
     python run_all.py --factor ep --only ic,layered
 
 结果按因子分目录写到 ``output/<因子名>/`` 下：
 
-    standardized/   MAD 去极值 + Z 标准化（仅在 --standardize-first 时产生）
     RLM_H1_独立同方差/  横截面回归
     RankIC/        Rank IC 检验
     分层回测/       行业内分层回测
 
-四个步骤使用完全相同的样本、前瞻收益与控制变量，结果可以直接横向对照。
+输入契约：因子文件必须**已经做过**逐日横截面 MAD 去极值与 Z 标准化，
+格式为 ``index = [date, stock_code]``、``columns = [signal]``。
+标准化属于因子计算层（各因子仓库的第 5 步），本工具箱不重复实现——
+这样同一套去极值口径全项目只有一份代码。
+
+三个步骤使用完全相同的样本、前瞻收益与控制变量，结果可以直接横向对照。
 """
 from __future__ import annotations
 
@@ -32,7 +32,6 @@ import cross_section_rlm  # noqa: E402
 import layered_backtest  # noqa: E402
 import rank_ic  # noqa: E402
 from common import OUTPUT_DIR, resolve_factor_path  # noqa: E402
-from standardize import run_standardize  # noqa: E402
 
 ALL_STEPS = ["rlm", "ic", "layered"]
 STEP_LABELS = {
@@ -49,17 +48,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         epilog=(
             "示例：\n"
             '  python run_all.py --factor ep\n'
-            '  python run_all.py --factor "D:/某处/fac_raw.parquet" --standardize-first\n'
             '  python run_all.py --factor ep --only ic,layered\n'
         ),
     )
     parser.add_argument("--factor", required=True, help="因子文件路径，或配置中的因子名")
     parser.add_argument("--name", default=None, help="因子名，默认取因子文件名")
-    parser.add_argument(
-        "--standardize-first",
-        action="store_true",
-        help="输入是原始因子，先做 MAD 去极值与 Z 标准化再分析",
-    )
     parser.add_argument(
         "--only",
         default=",".join(ALL_STEPS),
@@ -77,7 +70,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def run_pipeline(
     factor_input: str,
     name: str | None = None,
-    standardize_first: bool = False,
     steps: list[str] | None = None,
     min_observations: int | None = None,
 ) -> dict:
@@ -89,17 +81,8 @@ def run_pipeline(
 
     result: dict = {"steps": steps}
 
-    if standardize_first:
-        print("=" * 70)
-        print("步骤 0/3  MAD 去极值与 Z 标准化")
-        print("=" * 70)
-        standardized = run_standardize(factor_input, name)
-        factor_path = standardized["standardized_path"]
-        factor_name = standardized["factor_name"]
-        result["standardized"] = standardized
-    else:
-        factor_path = resolve_factor_path(factor_input)
-        factor_name = name or factor_path.stem
+    factor_path = resolve_factor_path(factor_input)
+    factor_name = name or factor_path.stem
 
     result["factor_name"] = factor_name
     result["factor_path"] = factor_path
@@ -140,7 +123,6 @@ def main(argv: list[str] | None = None) -> None:
     summary = run_pipeline(
         args.factor,
         name=args.name,
-        standardize_first=args.standardize_first,
         steps=steps,
         min_observations=args.min_observations,
     )

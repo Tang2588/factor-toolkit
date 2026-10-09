@@ -9,7 +9,6 @@
 - ``calendar``   月度形成／建仓／退出日历
 - ``returns``    前瞻收益
 - ``panel``      形成日面板、行业面板与回归面板
-- ``streaming``  逐日横截面 MAD 去极值与 Z 标准化
 """
 from __future__ import annotations
 
@@ -49,7 +48,6 @@ from .paths import (
     resolve_factor_path,
 )
 from .returns import build_endpoint_forward_returns
-from .streaming import standardize_factor
 
 __all__ = [
     "FORMAL_TEST_START",
@@ -80,5 +78,4 @@ __all__ = [
     "read_selected_dates",
     "resolve_factor_path",
     "scan_market_index",
-    "standardize_factor",
 ]
