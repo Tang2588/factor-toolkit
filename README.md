@@ -41,20 +41,21 @@ pip install -r requirements.txt
 # 复制一份本机配置并改成本机的数据目录
 cp config/paths.toml config/paths.local.toml
 
-# 跑完三步
+# 跑完三步，结果写到 output/<因子名>/
 python run_all.py --factor ep
+
+# 换任意因子：短名（在 factor_dirs 里找）或完整路径都行
+python run_all.py --factor pb
+python run_all.py --factor "D:/某处/换手率.parquet" --name 换手率
 
 # 只跑其中几步
 python run_all.py --factor ep --only ic,layered
 
-# 汇总所有已测因子 → output/因子对比表.md / .csv
-python summarize_factors.py
+# 把该因子的三份统计文档编译成 PDF（各出一个）
+python build_report_pdf.py --factor ep
 
-# 生成汇总文档 → output/因子测试.md + output/因子测试图/
-python factor_test_report.py
-
-# 把汇总文档编译成 PDF → output/因子测试.pdf
-python build_report_pdf.py
+# 也可以只编译指定的一份
+python build_report_pdf.py --source "output/ep/RankIC/IC统计结果.md"
 ```
 
 单步也可以单独运行：
@@ -71,30 +72,44 @@ python layered_backtest.py  --factor ep
 
 ```text
 output/
-├── 因子对比表.md / .csv           summarize_factors.py 生成的跨因子对比表
-├── 因子测试.md                    factor_test_report.py 生成的汇总文档
-├── 因子测试.tex / .pdf            build_report_pdf.py 由上面那份编译而来
-├── 因子测试图/                    汇总文档用的十张图（回归 3 + IC 4 + 分层 3）
-├── ep/
-│   ├── RLM_H1_独立同方差/         横截面回归
-│   ├── RankIC/                   Rank IC
-│   └── 分层回测/                  行业内分层回测
-└── pb/  roe/  size/ ...
+└── ep/
+    ├── RLM_H1_独立同方差/            横截面回归
+    │   ├── RLM统计结果.md            ← 单因子文档（口径 + 结果表 + 图）
+    │   ├── rlm_factor_premium.png      月度系数与累计溢价
+    │   ├── rlm_overall_summary.csv     全期结果
+    │   ├── rlm_annual_summary.csv      分年度结果
+    │   ├── rlm_coefficients_long.parquet   逐月系数长表
+    │   ├── rlm_regression_sample.parquet   回归样本
+    │   ├── rlm_sample_audit.csv        每月样本数与流失原因
+    │   ├── rlm_config.json             本次运行口径
+    │   └── ...
+    ├── RankIC/                       Rank IC
+    │   ├── IC统计结果.md             ← 单因子文档
+    │   ├── ic_timeseries.png           月度与累计 IC
+    │   ├── ic_overall_summary.csv      全期结果
+    │   └── ...
+    └── 分层回测/                      行业内分层回测
+        ├── 分层回测结果.md            ← 单因子文档
+        ├── layered_nav.png             五组与多空累计净值
+        ├── layered_annual.png          分年度收益
+        ├── layered_turnover.png        月度换手率
+        ├── layered_performance.csv     组合绩效表
+        ├── layered_holdings.parquet    逐月持仓
+        └── ...
 ```
 
-每个步骤目录里都有一份 `*统计结果.md`，以及逐月结果、图表和 `*_config.json`
-（记录本次运行的完整口径）。
+每个步骤目录里都有一份 `*统计结果.md`，它是该因子在这一步的完整文档：口径说明、
+全期与分年度结果表、极值月份、诊断信息和图表。**文档里的所有数字都由脚本从结果
+数据自动生成，没有人工填写的内容。**
 
 ### 该看哪些文件
 
-`output/` 下有一百多个文件，绝大多数是给机器读的。按这个顺序看：
-
 | 想干什么 | 看哪个 |
 |---|---|
-| 四因子的总体结论 | `因子测试.md`（GitHub 上直接可读）或 `因子测试.pdf` |
-| 跨因子横向对比 | `因子对比表.md`（14 列，含方向一致性判断） |
-| 看图表 | `因子测试图/` 下十张汇总图 |
-| 单个因子的完整结果 | `<因子名>/RLM_H1_独立同方差/RLM统计结果.md`、`<因子名>/RankIC/IC统计结果.md`、`<因子名>/分层回测/分层回测结果.md` |
+| 单因子的回归结果 | `<因子名>/RLM_H1_独立同方差/RLM统计结果.md` |
+| 单因子的 Rank IC | `<因子名>/RankIC/IC统计结果.md` |
+| 单因子的分层回测 | `<因子名>/分层回测/分层回测结果.md` |
+| 要 PDF | `python build_report_pdf.py --factor <因子名>` |
 | 追溯明细数据 | `<因子名>/.../*.csv`、`*.parquet` |
 | 查本次运行口径 | `<因子名>/.../*_config.json` |
 
@@ -162,9 +177,7 @@ factor-toolkit/
 ├── cross_section_ols.py       步骤一对照：同口径 OLS
 ├── rank_ic.py                 步骤二：Rank IC
 ├── layered_backtest.py        步骤三：行业内分层回测
-├── summarize_factors.py       跨因子对比表
-├── factor_test_report.py      生成汇总文档《因子测试》（表 + 图）
-├── build_report_pdf.py        把《因子测试》编译成 PDF
+├── build_report_pdf.py        把因子的统计文档编译成 PDF
 ├── md_to_latex.py             Markdown → LaTeX 转换（被上一步调用）
 ├── common/                    共享底层
 │   ├── paths.py               路径与共享常量
