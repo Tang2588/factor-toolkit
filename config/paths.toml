@@ -21,6 +21,7 @@ factor_dirs = [
     "D:/因子计算/factor-pb/因子结果",
     "D:/因子计算/factor-roe/因子结果",
     "D:/因子计算/factor-size/因子结果",
+    "D:/因子计算/factor-turnover/因子结果",
 ]
 
 # 结果输出目录，留空则使用工具箱下的 output/
